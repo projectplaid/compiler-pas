@@ -58,7 +58,7 @@ begin
     repeat
       Tok := Lex.NextToken;
       WriteLn('Token Type: ', Tok.TokenType, ' Value: ', Tok.Value);
-    until Tok.TokenType = EOF;
+    until ((Tok.TokenType = EOF) or (Tok.TokenType = Unknown));
     Lex.Free;
     SourceStream.Free;
   end;

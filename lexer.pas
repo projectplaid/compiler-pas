@@ -8,7 +8,7 @@ uses
   Classes, SysUtils;
 
 type
-  TTokenType = (EOF, Identifier);
+  TTokenType = (EOF, Identifier, Keyword, Period, Unknown);
 
   PToken = ^TToken;
 
@@ -31,6 +31,9 @@ type
     function HandleStringLiteral: TToken;
     function HandleNumber: TToken;
     function HandleAlpha: TToken;
+
+    function GetChar(var Ch: char): boolean;
+    function PeekChar(var Ch: char): boolean;
   end;
 
 implementation
@@ -44,61 +47,91 @@ destructor TLexer.Destroy;
 begin
 end;
 
-procedure TLexer.SkipWhitespace;
+function TLexer.GetChar(var Ch: char): boolean;
 var
-  Buffer: array[0..1] of char;
+  Buffer: array[0..0] of char = (#0);
+  ReadCount: longint;
+begin
+  ReadCount := Stream.Read(Buffer, 1);
+  if ReadCount > 0 then
+  begin
+    Ch := Buffer[0];
+    Result := True;
+  end
+  else
+  begin
+    Result := False;
+  end;
+end;
+
+function TLexer.PeekChar(var Ch: char): boolean;
+var
+  Buffer: array[0..0] of char = (#0);
   ReadCount: longint;
   Pos: int64;
 begin
   ReadCount := Stream.Read(Buffer, 1);
-  while ReadCount > 0 do
+  if ReadCount > 0 then
   begin
-    case Ord(Buffer[0]) of
-      $0, $9, $0A, $0D, $20: ;
+    Ch := Buffer[0];
+    Result := True;
+
+    // rewind the stream when we had a successful read
+    Pos := Stream.Position;
+    Dec(Pos);
+    Stream.Position := Pos;
+  end
+  else
+  begin
+    Result := False;
+  end;
+end;
+
+procedure TLexer.SkipWhitespace;
+var
+  Ch: char = #0;
+begin
+  while PeekChar(Ch) do
+  begin
+    case Ch of
+      #0, #9, #10, #13, #32: GetChar(Ch);
       else
       begin
-        Pos := Stream.Position;
-        Dec(Pos);
-        Stream.Position := Pos;
         exit;
       end;
     end;
-    ReadCount := Stream.Read(Buffer, 1);
   end;
 end;
 
 function TLexer.NextToken: TToken;
 var
-  Buffer: array[0..1] of char;
-  ReadCount: longint;
-  Pos: int64;
+  Ch: char = #0;
 begin
   SkipWhitespace;
 
-  ReadCount := Stream.Read(Buffer, 1);
-  if ReadCount < 1 then
+  if Not PeekChar(Ch) then
   begin
     Result.TokenType := EOF;
     Result.Value := 'EOF';
     exit;
   end;
 
-  case Buffer[0] of
+  case Ch of
     '0'..'9': Result := HandleNumber;
     'A'..'Z', 'a'..'z': Result := HandleAlpha;
     '''': Result := HandleStringLiteral;
     '"': Result := HandleComment;
+    '.': begin
+      GetChar(Ch);
+      Result.TokenType := Period;
+      Result.Value := '.';
+    end
     else
     begin
-      Pos := Stream.Position;
-      Dec(Pos);
-      Stream.Position := Pos;
-      exit;
+      Result.TokenType := Unknown;
+      Result.Value := 'Unknown token';
     end;
   end;
-
-  Result.TokenType := EOF;
-  Result.Value := 'EOF';
 end;
 
 function TLexer.HandleComment: TToken;
@@ -120,9 +153,31 @@ begin
 end;
 
 function TLexer.HandleAlpha: TToken;
+var
+  Ch: char = #0;
+  Value: String = '';
 begin
-  Result.TokenType := EOF;
-  Result.Value := 'EOF';
+  while PeekChar(Ch) do
+  begin
+    case Ch of
+      #0, #9, #10, #13, #32: break;
+      '.': break;
+      else
+      begin
+        GetChar(Ch);
+        Value := Value + Ch;
+      end;
+    end;
+  end;
+
+  if Value[Length(Value)-1] = ':' Then
+  begin
+    Result.TokenType := Keyword;
+  end else
+  begin
+    Result.TokenType := Identifier;
+  end;
+  Result.Value := Value;
 end;
 
 end.
