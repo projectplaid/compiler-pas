@@ -8,7 +8,7 @@ uses
   Classes, SysUtils;
 
 type
-  TTokenType = (EOF, Identifier, Keyword, Period, Unknown);
+  TTokenType = (EOF, Identifier, Keyword, Period, StringLiteral, Selector, Unknown, Invalid);
 
   PToken = ^TToken;
 
@@ -109,7 +109,7 @@ var
 begin
   SkipWhitespace;
 
-  if Not PeekChar(Ch) then
+  if not PeekChar(Ch) then
   begin
     Result.TokenType := EOF;
     Result.Value := 'EOF';
@@ -118,10 +118,11 @@ begin
 
   case Ch of
     '0'..'9': Result := HandleNumber;
-    'A'..'Z', 'a'..'z': Result := HandleAlpha;
+    '#', 'A'..'Z', 'a'..'z': Result := HandleAlpha;
     '''': Result := HandleStringLiteral;
     '"': Result := HandleComment;
-    '.': begin
+    '.':
+    begin
       GetChar(Ch);
       Result.TokenType := Period;
       Result.Value := '.';
@@ -141,9 +142,37 @@ begin
 end;
 
 function TLexer.HandleStringLiteral: TToken;
+var
+  Ch: char = #0;
+  Ch2: char = #0;
+  Value: string = '';
 begin
-  Result.TokenType := EOF;
-  Result.Value := 'EOF';
+  // consume the leading '
+  GetChar(Ch);
+  while PeekChar(Ch) do
+  begin
+    case Ch of
+      '''':
+      begin
+        GetChar(Ch);
+        if ((PeekChar(Ch2)) and (Ch2 = '''')) then
+        begin
+          Value := Value + '''';
+          GetChar(Ch);
+        end
+        else
+          break;
+      end;
+      else
+      begin
+        GetChar(Ch);
+        Value := Value + Ch;
+      end;
+    end;
+  end;
+
+  Result.TokenType := StringLiteral;
+  Result.Value := Value;
 end;
 
 function TLexer.HandleNumber: TToken;
@@ -155,25 +184,38 @@ end;
 function TLexer.HandleAlpha: TToken;
 var
   Ch: char = #0;
-  Value: String = '';
+  Value: string = '';
 begin
   while PeekChar(Ch) do
   begin
     case Ch of
       #0, #9, #10, #13, #32: break;
       '.': break;
-      else
+       '#', ':', '_', 'A'..'Z', 'a'..'z', '0'..'9':
       begin
         GetChar(Ch);
         Value := Value + Ch;
       end;
+      else
+      begin
+        GetChar(Ch);
+        Value := Value + Ch;
+
+        Result.TokenType := Invalid;
+        Result.Value := Value;
+        exit;
+      end;
     end;
   end;
 
-  if Value[Length(Value)-1] = ':' Then
+  if Value[1] = '#' then
+  begin
+    Result.TokenType := Selector;
+  end else if Value[Length(Value)] = ':' then
   begin
     Result.TokenType := Keyword;
-  end else
+  end
+  else
   begin
     Result.TokenType := Identifier;
   end;
