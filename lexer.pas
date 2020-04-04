@@ -5,10 +5,11 @@ unit lexer;
 interface
 
 uses
-  Classes, SysUtils;
+  Classes, SysUtils, IniFiles;
 
 type
-  TTokenType = (EOF, Identifier, Keyword, Period, StringLiteral, Selector, Unknown, Invalid);
+  TTokenType = (EOF, Identifier, Keyword, Period, StringLiteral,
+    Selector, Comment, Unknown, Invalid, PseudoVariable, ConstantReference);
 
   PToken = ^TToken;
 
@@ -20,6 +21,9 @@ type
   TLexer = class
   private
     Stream: TStream;
+
+    PseudoVariables: THashedStringList;
+    ConstantReferences: THashedStringList;
   public
     constructor Create(SourceStream: TStream);
     destructor Destroy; override;
@@ -41,10 +45,22 @@ implementation
 constructor TLexer.Create(SourceStream: TStream);
 begin
   Stream := SourceStream;
+
+  PseudoVariables := THashedStringList.Create;
+  PseudoVariables.Add('self');
+  PseudoVariables.Add('super');
+  PseudoVariables.Add('thisContext');
+
+  ConstantReferences := THashedStringList.Create;
+  ConstantReferences.Add('nil');
+  ConstantReferences.Add('false');
+  ConstantReferences.Add('true');
 end;
 
 destructor TLexer.Destroy;
 begin
+  PseudoVariables.Free;
+  ConstantReferences.Free;
 end;
 
 function TLexer.GetChar(var Ch: char): boolean;
@@ -136,9 +152,32 @@ begin
 end;
 
 function TLexer.HandleComment: TToken;
+var
+  Ch: char = #0;
+  Value: string = '';
 begin
-  Result.TokenType := EOF;
-  Result.Value := 'EOF';
+  // consume the leading "
+  GetChar(Ch);
+  while PeekChar(Ch) do
+  begin
+    case Ch of
+      '"':
+      begin
+        Result.Value := Value;
+        Result.TokenType := Comment;
+        GetChar(Ch);
+        exit;
+      end;
+      else
+      begin
+        GetChar(Ch);
+        Value := Value + Ch;
+      end;
+    end;
+  end;
+
+  Result.TokenType := Invalid;
+  Result.Value := Value;
 end;
 
 function TLexer.HandleStringLiteral: TToken;
@@ -191,7 +230,7 @@ begin
     case Ch of
       #0, #9, #10, #13, #32: break;
       '.': break;
-       '#', ':', '_', 'A'..'Z', 'a'..'z', '0'..'9':
+      '#', ':', '_', 'A'..'Z', 'a'..'z', '0'..'9':
       begin
         GetChar(Ch);
         Value := Value + Ch;
@@ -208,10 +247,21 @@ begin
     end;
   end;
 
+  if ConstantReferences.IndexOf(Value) <> -1 then
+  begin
+    Result.TokenType := ConstantReference;
+  end
+  else
+  if PseudoVariables.IndexOf(Value) <> -1 then
+  begin
+    Result.TokenType := PseudoVariable;
+  end
+  else
   if Value[1] = '#' then
   begin
     Result.TokenType := Selector;
-  end else if Value[Length(Value)] = ':' then
+  end
+  else if Value[Length(Value)] = ':' then
   begin
     Result.TokenType := Keyword;
   end
