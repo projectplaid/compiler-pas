@@ -9,7 +9,8 @@ uses
 
 type
   TTokenType = (EOF, Identifier, Keyword, Period, StringLiteral,
-    Selector, Comment, Unknown, Invalid, PseudoVariable, ConstantReference);
+    Selector, Comment, Unknown, Invalid, PseudoVariable, ConstantReference,
+    BinarySelector);
 
   PToken = ^TToken;
 
@@ -24,6 +25,7 @@ type
 
     PseudoVariables: THashedStringList;
     ConstantReferences: THashedStringList;
+    BinarySelectorChars: THashedStringList;
   public
     constructor Create(SourceStream: TStream);
     destructor Destroy; override;
@@ -35,6 +37,7 @@ type
     function HandleStringLiteral: TToken;
     function HandleNumber: TToken;
     function HandleAlpha: TToken;
+    function HandleBinarySelectorChar: TToken;
 
     function GetChar(var Ch: char): boolean;
     function PeekChar(var Ch: char): boolean;
@@ -55,12 +58,31 @@ begin
   ConstantReferences.Add('nil');
   ConstantReferences.Add('false');
   ConstantReferences.Add('true');
+
+  BinarySelectorChars := THashedStringList.Create;
+  BinarySelectorChars.Add('~');
+  BinarySelectorChars.Add('!');
+  BinarySelectorChars.Add('@');
+  BinarySelectorChars.Add('%');
+  BinarySelectorChars.Add('&');
+  BinarySelectorChars.Add('*');
+  BinarySelectorChars.Add('-');
+  BinarySelectorChars.Add('+');
+  BinarySelectorChars.Add('=');
+  BinarySelectorChars.Add('|');
+  BinarySelectorChars.Add('\');
+  BinarySelectorChars.Add('<');
+  BinarySelectorChars.Add('>');
+  BinarySelectorChars.Add(',');
+  BinarySelectorChars.Add('?');
+  BinarySelectorChars.Add('/');
 end;
 
 destructor TLexer.Destroy;
 begin
   PseudoVariables.Free;
   ConstantReferences.Free;
+  BinarySelectorChars.Free;
 end;
 
 function TLexer.GetChar(var Ch: char): boolean;
@@ -119,6 +141,28 @@ begin
   end;
 end;
 
+function TLexer.HandleBinarySelectorChar: TToken;
+var
+  Ch: char = #0;
+  Value: string = '';
+begin
+  GetChar(Ch);
+  Value := Value + Ch;
+  while PeekChar(Ch) do
+  begin
+    if BinarySelectorChars.IndexOf(Ch) <> -1 then
+    begin
+      GetChar(Ch);
+      Value := Value + Ch;
+    end
+    else
+      break;
+  end;
+
+  Result.TokenType := BinarySelector;
+  Result.Value := Value;
+end;
+
 function TLexer.NextToken: TToken;
 var
   Ch: char = #0;
@@ -145,8 +189,15 @@ begin
     end
     else
     begin
-      Result.TokenType := Unknown;
-      Result.Value := 'Unknown token';
+      if BinarySelectorChars.IndexOf(Ch) <> -1 then
+      begin
+        Result := HandleBinarySelectorChar;
+      end
+      else
+      begin
+        Result.TokenType := Unknown;
+        Result.Value := 'Unknown token';
+      end;
     end;
   end;
 end;
